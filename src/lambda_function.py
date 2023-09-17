@@ -21,6 +21,10 @@ def lambda_handler(event, context):
 
     farm_id = key.split("_")[0]
     farm_name = key.split("_")[1]
+    key_file = f"{farm_id}_{farm_name}.geojson"
+    print(key_file)
+    key_file = '278_finaltesting.geojson'
+    
 
     print(farm_id, farm_name)
 
@@ -59,7 +63,7 @@ def lambda_handler(event, context):
         
                 # Download the GeoJSON file from another S3 bucket
                 with tempfile.NamedTemporaryFile(suffix='.geojson') as tmp_geojson_file:
-                    s3.download_file('boundary-plot', f"{farm_id}_{farm_name}.geojson", tmp_geojson_file.name)
+                    s3.download_file('boundary-plot', key_file, tmp_geojson_file.name)
                     gdf = gpd.read_file(tmp_geojson_file.name)
                     
                     # Step 2: Masking
