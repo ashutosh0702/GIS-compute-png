@@ -21,7 +21,9 @@ def lambda_handler(event, context):
     print(key)
 
     farm_id = key.split("_")[0]
-    farm_name = key.split("_")[1]
+    farm_name = key.split("/")[0].split("_")[1]
+    index = key.split("/")[1].split("_")[1][:-4]
+    print(index)
     key_file = f"{farm_id}_{farm_name}.geojson"
     print(key_file)
     le = '278_finaltesting.geojson'
