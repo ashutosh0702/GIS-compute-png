@@ -7,6 +7,7 @@ import numpy as np
 from scipy import ndimage
 import tempfile
 import matplotlib.pyplot as plt
+import json
 
 s3 = boto3.client('s3')
 
@@ -23,8 +24,8 @@ def lambda_handler(event, context):
     farm_name = key.split("_")[1]
     key_file = f"{farm_id}_{farm_name}.geojson"
     print(key_file)
-    key_file = '278_finaltesting.geojson'
-    
+    le = '278_finaltesting.geojson'
+    print(len(key_file), len(le))
 
     print(farm_id, farm_name)
 
@@ -34,7 +35,7 @@ def lambda_handler(event, context):
         
         # Step 1: Upsampling and Post-processing
         with rasterio.open(tmp_file.name) as src:
-            upscale_factor = 20
+            upscale_factor = 10
             new_width = int(src.width * upscale_factor)
             new_height = int(src.height * upscale_factor)
             transform = src.transform * src.transform.scale(
@@ -102,4 +103,8 @@ def lambda_handler(event, context):
                     plt.savefig(tmp_png_file.name, dpi=200,bbox_inches='tight', pad_inches = 0 ,transparent=True)
                     
                     # Upload the colorized raster to a new S3 bucket
-                    s3.upload_file(tmp_png_file.name, 'gis-colourized-png-data', f'colorized_{key}.png')
+                    s3.upload_file(tmp_png_file.name, 'gis-colourized-png-data', f'colorized_{key_file[:-7]}.png')
+    return {
+        "statusCode" : 200,
+        "body" : json.dumps("Success")
+    }
