@@ -8,34 +8,37 @@ from scipy import ndimage
 import tempfile
 import matplotlib.pyplot as plt
 import json
+import os
+from matplotlib.colors import ListedColormap, BoundaryNorm
+
 
 s3 = boto3.client('s3')
 
-def lambda_handler(event, context):
+# Read bucket names from environment variables
+geojson_bucket = os.environ.get('geojson_bucket', 'boundary-plot')  # Default to 'boundary-plot' if not set
+png_bucket = os.environ.get('png_bucket', 'gis-colourized-png-data')  # Default to 'gis-colourized-png-data' if not set
 
+def lambda_handler(event, context):
     print(event)
-    # Get the bucket and object key from the event
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = event['Records'][0]['s3']['object']['key']
-
     print(key)
 
-    farm_id = key.split("_")[0]
-    farm_name = key.split("/")[0].split("_")[1]
-    index = key.split("/")[1].split("_")[1][:-4]
-    print(index)
+    first_part, second_part = key.split("/")
+    farm_id, farm_name = first_part.split("_")
+    _, index = second_part.split("_")
+    index = index[:-4]
+    
     key_file = f"{farm_id}_{farm_name}.geojson"
-    print(key_file)
-    le = '278_finaltesting.geojson'
-    print(len(key_file), len(le))
+    print(farm_id, farm_name, index, key_file)
 
-    print(farm_id, farm_name)
+    with tempfile.NamedTemporaryFile() as tmp_file, \
+         tempfile.NamedTemporaryFile(suffix='.tif') as tmp_upsampled_file, \
+         tempfile.NamedTemporaryFile(suffix='.geojson') as tmp_geojson_file, \
+         tempfile.NamedTemporaryFile(suffix='.png') as tmp_png_file:
 
-    # Download the GeoTIFF file from S3 to a temp directory
-    with tempfile.NamedTemporaryFile() as tmp_file:
         s3.download_file(bucket, key, tmp_file.name)
-        
-        # Step 1: Upsampling and Post-processing
+
         with rasterio.open(tmp_file.name) as src:
             upscale_factor = 10
             new_width = int(src.width * upscale_factor)
@@ -54,59 +57,55 @@ def lambda_handler(event, context):
                 "width": new_width,
                 "transform": transform
             })
-            
+
             ndvi_data = upsampled_ndvi[0, :, :]
             mask = np.isnan(ndvi_data)
             ndvi_data[mask] = ndimage.generic_filter(ndvi_data, np.nanmedian, size=19)[mask]
-        
-            # Save the upsampled and post-processed image to another temp file
-            with tempfile.NamedTemporaryFile(suffix='.tif') as tmp_upsampled_file:
-                with rasterio.open(tmp_upsampled_file.name, 'w', **upsampled_meta) as dest:
-                    dest.write(upsampled_ndvi)
-        
-                # Download the GeoJSON file from another S3 bucket
-                with tempfile.NamedTemporaryFile(suffix='.geojson') as tmp_geojson_file:
-                    s3.download_file('boundary-plot', key_file, tmp_geojson_file.name)
-                    gdf = gpd.read_file(tmp_geojson_file.name)
-                    
-                    # Step 2: Masking
-                    with rasterio.open(tmp_upsampled_file.name) as src:
-                        raster_crs = src.crs
-                        raster_transform = src.transform
-                        raster_shape = (src.height, src.width)
-                        raster_data = src.read(1)
-                        raster_meta = src.meta
-                        
-                    gdf = gdf.to_crs(raster_crs)
-                    mask = geometry_mask(gdf.geometry, transform=raster_transform, invert=False, out_shape=raster_shape)
-                    nodata_value = np.nan
-                    raster_data[mask] = nodata_value
 
-                    # Find the extent of the valid data
-                    rows, cols = np.where(~np.isnan(raster_data))
-                    min_row, max_row = np.min(rows), np.max(rows)
-                    min_col, max_col = np.min(cols), np.max(cols)
+        with rasterio.open(tmp_upsampled_file.name, 'w', **upsampled_meta) as dest:
+            dest.write(upsampled_ndvi)
 
-                    # Crop the data to the extent of the valid data
-                    cropped_data = raster_data[min_row:max_row+1, min_col:max_col+1]
-                    
-                    # Save the masked raster to another temp file
-                    with tempfile.NamedTemporaryFile(suffix='.tif') as tmp_masked_file:
-                        with rasterio.open(tmp_masked_file.name, 'w', **raster_meta) as dest:
-                            dest.write(cropped_data,1)
-        
-                # Colorize and save as PNG
-                with tempfile.NamedTemporaryFile(suffix='.png') as tmp_png_file:
+        s3.download_file(geojson_bucket, key_file, tmp_geojson_file.name)
+        gdf = gpd.read_file(tmp_geojson_file.name)
 
-                    fig, ax = plt.subplots()
-                    plt.imshow(cropped_data, cmap='RdYlGn')
-                    ax.set_axis_off()
-                    fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=10)
-                    plt.savefig(tmp_png_file.name, dpi=200,bbox_inches='tight', pad_inches = 0 ,transparent=True)
-                    
-                    # Upload the colorized raster to a new S3 bucket
-                    s3.upload_file(tmp_png_file.name, 'gis-colourized-png-data', f'colorized_{key_file[:-7]}.png')
+        with rasterio.open(tmp_upsampled_file.name) as src:
+            raster_crs = src.crs
+            raster_transform = src.transform
+            raster_shape = (src.height, src.width)
+            raster_data = src.read(1)
+            raster_meta = src.meta
+
+        gdf = gdf.to_crs(raster_crs)
+        mask = geometry_mask(gdf.geometry, transform=raster_transform, invert=False, out_shape=raster_shape)
+        raster_data[mask] = np.nan
+
+        rows, cols = np.where(~np.isnan(raster_data))
+        min_row, max_row = np.min(rows), np.max(rows)
+        min_col, max_col = np.min(cols), np.max(cols)
+        cropped_data = raster_data[min_row:max_row+1, min_col:max_col+1]
+
+        # Custom color map and bounds based on index
+        if index == "NDMI":
+            colors_list = ['#bbd2f0', '#79aaf8', '#4086e3', '#1e60b1', '#0c468f', '#06408c']
+            bounds = [-1, -0.2, 0, 0.2, 0.4, 0.6, 1]
+        elif index == "NDVI":
+            colors_list = ['#808080', '#FFFF00', '#FFA500', '#90EE90', '#008000', '#006400', '#004d00']
+            bounds = [-1, 0.009, 0.1, 0.25, 0.35, 0.5, 0.7, 1]
+
+
+        cmap = ListedColormap(colors_list)
+        norm = BoundaryNorm(bounds, cmap.N)
+
+        fig, ax = plt.subplots()
+        plt.imshow(cropped_data, cmap=cmap, norm=norm)
+        ax.set_axis_off()
+        fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=10)
+        plt.savefig(tmp_png_file.name, dpi=200, bbox_inches='tight', pad_inches=0, transparent=True)
+
+        png_key = key.replace('.tif', '.png')  # Replace the original TIFF file extension with .png
+        s3.upload_file(tmp_png_file.name, png_bucket, png_key)
+
     return {
-        "statusCode" : 200,
-        "body" : json.dumps("Success")
+        "statusCode": 200,
+        "body": json.dumps("Success")
     }
