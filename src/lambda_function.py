@@ -89,9 +89,8 @@ def lambda_handler(event, context):
             colors_list = ['#bbd2f0', '#79aaf8', '#4086e3', '#1e60b1', '#0c468f', '#06408c']
             bounds = [-1, -0.2, 0, 0.2, 0.4, 0.6, 1]
         elif index == "NDVI":
-            colors_list = ['#808080', '#FFFF00', '#FFA500', '#90EE90', '#008000', '#006400', '#004d00']
-            bounds = [-1, 0.009, 0.1, 0.25, 0.35, 0.5, 0.7, 1]
-
+            colors_list = ['#808080', '#94f08d', '#4df267', '#108c07', '#0c6d05', '#074003']
+            bounds = [-1, 0.009, 0.1, 0.25, 0.4, 0.6, 1]
 
         cmap = ListedColormap(colors_list)
         norm = BoundaryNorm(bounds, cmap.N)
