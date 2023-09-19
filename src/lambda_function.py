@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import json
 import os
 from matplotlib.colors import ListedColormap, BoundaryNorm
+from scipy.interpolate import griddata
 
 s3 = boto3.client('s3')
 
@@ -94,7 +95,20 @@ def upsample_raster(src, upscale_factor):
 
 def fill_nan_values(ndvi_data):
     mask = np.isnan(ndvi_data)
-    ndvi_data[mask] = ndimage.generic_filter(ndvi_data, np.nanmedian, size=19)[mask]
+    #ndvi_data[mask] = ndimage.generic_filter(ndvi_data, np.nanmedian, size=19)[mask]
+    
+    # Get coordinates of valid (non-NaN) and invalid (NaN) points
+    valid_pts = np.argwhere(~mask)
+    invalid_pts = np.argwhere(mask)
+
+    # Get valid values
+    valid_values = ndvi_data[~mask]
+
+    # Perform the interpolation using griddata
+    interpolated_values = griddata(valid_pts, valid_values, invalid_pts, method='nearest')
+
+    # Fill the NaN pixels in the original array
+    ndvi_data[mask] = interpolated_values
 
 def write_raster(filename, data, meta):
     with rasterio.open(filename, 'w', **meta) as dest:
