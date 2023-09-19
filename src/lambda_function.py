@@ -21,11 +21,13 @@ png_bucket = os.environ.get('png_bucket', 'gis-colourized-png-data')  # Default 
 def lambda_handler(event, context):
     print(event)
     bucket = event['Records'][0]['s3']['bucket']['name']
-    key = event['Records'][0]['s3']['object']['key']
+    key = event['Records'][0]['s3']['object']['key'].replace('+', ' ')
     print(key)
 
     first_part, second_part = key.split("/")
-    farm_id, farm_name = first_part.split("_")
+    parts = first_part.split("_")
+    farm_id = parts[0]
+    farm_name = "_".join(parts[1:])
     _, index = second_part.split("_")
     index = index[:-4]
     
