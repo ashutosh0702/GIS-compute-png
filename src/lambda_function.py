@@ -23,6 +23,7 @@ def lambda_handler(event, context):
         key = event['Records'][0]['s3']['object']['key'].replace('+', ' ')
         
         farm_id, farm_name, index, key_file = parse_key(key)
+        print(f"Creating PNG file for {farm_id} & {farm_name}")
         
         with tempfile.NamedTemporaryFile() as tmp_file, \
              tempfile.NamedTemporaryFile(suffix='.tif') as tmp_upsampled_file, \
